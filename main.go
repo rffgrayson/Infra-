@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -190,10 +191,11 @@ func getWakaTime(c *fiber.Ctx) error {
 		return c.JSON(cached)
 	}
 
-	apiKey := os.Getenv("WAKATIME_API_KEY")
+	apiKey  := os.Getenv("WAKATIME_API_KEY")
+	encoded := base64.StdEncoding.EncodeToString([]byte(apiKey))
 	body, err := get(
 		"https://wakatime.com/api/v1/users/current/stats/last_7_days",
-		"Basic "+apiKey,
+		"Basic "+encoded,
 	)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "wakatime request failed"})
