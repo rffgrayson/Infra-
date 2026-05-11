@@ -173,25 +173,34 @@ func getNowPlaying(c *fiber.Ctx) error {
 }
 
 func getGitHub(c *fiber.Ctx) error {
-	if cached, ok := ghCache.get(); ok {
-		return c.JSON(cached)
-	}
-	token := os.Getenv("GITHUB_TOKEN")
-	body, err := get(
-		"https://api.github.com/users/rffgrayson/events/public",
-		"token "+token,
-	)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "github request failed"})
-	}
+    if cached, ok := ghCache.get(); ok {
+        return c.JSON(cached)
+    }
 
-	var events []map[string]any
-	if err := json.Unmarshal(body, &events); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "parse failed"})
-	}
+    // Pull the token from environment variables
+    token := os.Getenv("GITHUB_TOKEN")
+    
+    authHeader := ""
+    if token != "" {
+        authHeader = "Bearer " + token
+    }
 
-	ghCache.set(events)
-	return c.JSON(events)
+    body, err := get(
+        "https://api.github.com/users/rffgrayson/events/public",
+        authHeader,
+    )
+    if err != nil {
+        // Now this will show "upstream API returned status 401" instead of "parse failed"
+        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+    }
+
+    var events []map[string]any
+    if err := json.Unmarshal(body, &events); err != nil {
+        return c.Status(500).JSON(fiber.Map{"error": "parse failed"})
+    }
+
+    ghCache.set(events)
+    return c.JSON(events)
 }
 
 func getWakaTime(c *fiber.Ctx) error {
