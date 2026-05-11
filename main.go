@@ -168,10 +168,10 @@ func getGitHub(c *fiber.Ctx) error {
 	if cached, ok := ghCache.get(); ok {
 		return c.JSON(cached)
 	}
-
+	token := os.Getenv("GITHUB_TOKEN")
 	body, err := get(
 		"https://api.github.com/users/rffgrayson/events/public",
-		"",
+		"token "+token,
 	)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "github request failed"})
