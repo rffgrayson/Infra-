@@ -109,11 +109,19 @@ func get(url, authHeader string) ([]byte, error) {
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
+	// Added User-Agent (GitHub's API strictly requires this for some endpoints)
+    req.Header.Set("User-Agent", "portfolio-api")
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+        return nil, fmt.Errorf("upstream API returned status %d", resp.StatusCode)
+    }
+	
 	return io.ReadAll(resp.Body)
 }
 
