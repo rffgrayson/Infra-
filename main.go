@@ -98,6 +98,19 @@ type WakaResult struct {
 	Languages    []WakaLanguage `json:"languages"`
 }
 
+// Create a new struct to hold the full response for the frontend
+type MusicResponse struct {
+    NowPlaying   *NowPlayingResult   `json:"nowPlaying"`
+    RecentTracks []RecentTrackResult `json:"recentTracks"`
+}
+
+type RecentTrackResult struct {
+    Name   string `json:"name"`
+    Artist string `json:"artist"`
+    Image  string `json:"image"`
+    URL    string `json:"url"`
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 func get(url, authHeader string) ([]byte, error) {
@@ -128,48 +141,70 @@ func get(url, authHeader string) ([]byte, error) {
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 func getNowPlaying(c *fiber.Ctx) error {
-	apiKey   := os.Getenv("LASTFM_API_KEY")
-	username := os.Getenv("LASTFM_USERNAME")
+    apiKey := os.Getenv("LASTFM_API_KEY")
+    username := os.Getenv("LASTFM_USERNAME")
 
-	body, err := get(fmt.Sprintf(
-		"https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=%s&api_key=%s&format=json&limit=1",
-		username, apiKey,
-	), "")
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "lastfm request failed"})
-	}
+    // Increase limit to 5 to get history
+    body, err := get(fmt.Sprintf(
+        "https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=%s&api_key=%s&format=json&limit=5",
+        username, apiKey,
+    ), "")
+    
+    if err != nil {
+        return c.Status(500).JSON(fiber.Map{"error": "lastfm request failed"})
+    }
 
-	var data LastFMRecentTracks
-	if err := json.Unmarshal(body, &data); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "parse failed"})
-	}
+    var data LastFMRecentTracks
+    if err := json.Unmarshal(body, &data); err != nil {
+        return c.Status(500).JSON(fiber.Map{"error": "parse failed"})
+    }
 
-	tracks := data.RecentTracks.Track
-	if len(tracks) == 0 {
-		return c.JSON(NowPlayingResult{IsPlaying: false})
-	}
+    tracks := data.RecentTracks.Track
+    if len(tracks) == 0 {
+        return c.JSON(MusicResponse{NowPlaying: nil, RecentTracks: []RecentTrackResult{}})
+    }
 
-	track     := tracks[0]
-	isPlaying := track.Attr != nil && track.Attr.NowPlaying == "true"
+    // 1. Determine "Now Playing"
+    var nowPlaying *NowPlayingResult
+    firstTrack := tracks[0]
+    if firstTrack.Attr != nil && firstTrack.Attr.NowPlaying == "true" {
+        nowPlaying = &NowPlayingResult{
+            IsPlaying: true,
+            Title:     firstTrack.Name,
+            Artist:    firstTrack.Artist.Text,
+            Album:     firstTrack.Album.Text,
+            AlbumArt:  getArt(firstTrack),
+            SongURL:   firstTrack.URL,
+        }
+    }
 
-	albumArt := ""
-	for _, img := range track.Image {
-		if img.Size == "extralarge" && img.Text != "" { albumArt = img.Text; break }
-	}
-	if albumArt == "" {
-		for _, img := range track.Image {
-			if img.Size == "large" && img.Text != "" { albumArt = img.Text; break }
-		}
-	}
+    // 2. Map the rest to RecentTracks
+    recent := []RecentTrackResult{}
+    // If tracks[0] is playing now, start history from tracks[1]
+    startIndex := 0
+    if nowPlaying != nil { startIndex = 1 }
 
-	return c.JSON(NowPlayingResult{
-		IsPlaying: isPlaying,
-		Title:     track.Name,
-		Artist:    track.Artist.Text,
-		Album:     track.Album.Text,
-		AlbumArt:  albumArt,
-		SongURL:   track.URL,
-	})
+    for i := startIndex; i < len(tracks); i++ {
+        recent = append(recent, RecentTrackResult{
+            Name:   tracks[i].Name,
+            Artist: tracks[i].Artist.Text,
+            Image:  getArt(tracks[i]),
+            URL:    tracks[i].URL,
+        })
+    }
+
+    return c.JSON(MusicResponse{
+        NowPlaying:   nowPlaying,
+        RecentTracks: recent,
+    })
+}
+
+// Helper to get the image URL from LastFM track
+func getArt(t LastFMTrack) string {
+    for _, img := range t.Image {
+        if img.Size == "large" && img.Text != "" { return img.Text }
+    }
+    return ""
 }
 
 func getGitHub(c *fiber.Ctx) error {
